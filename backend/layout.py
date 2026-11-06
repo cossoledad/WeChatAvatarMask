@@ -55,7 +55,7 @@ def geometric_radius(im,box):
             opaque[rows,cols]=local>threshold
     choices=[]
     for r in np.arange(0,min(w,h)*.25+.25,.5):
-        predicted=coverage(w,h,float(r))[:vh]>.5
+        predicted=coverage(w,h,float(r),samples=4)[:vh]>.5
         error=float(np.mean(predicted[corners]!=opaque[corners]))
         choices.append((error,float(r)))
     err,r=min(choices)
@@ -109,25 +109,28 @@ def detect_right(im):
         if length<rough_size*.32 or length>rough_size*1.24:continue
         x=_edge(im,0,rough_x,start+max(2,length//4),start+max(3,3*length//4))
         right=_edge(im,0,rough_x+rough_size,start+max(2,length//4),start+max(3,3*length//4))
-        size=right-x
-        if abs(size-rough_size)>max(5,rough_size*.1):continue
+        width=right-x
+        if abs(width-rough_size)>max(5,rough_size*.1):continue
         y=0 if start==0 else _edge(im,1,int(start),x+pad,right-pad)
+        height=width
         if length>rough_size*.8 and end<H:
             bottom=_edge(im,1,int(end),x+pad,right-pad)
-            if abs((bottom-y)-size)<=max(4,size*.06):
-                size=round((size+bottom-y)/2)
-        vh=min(size,H-y)
-        if end-start<size*.85:
+            if abs((bottom-y)-width)<=max(4,width*.06):
+                # Keep both measured bounds. Averaging into a square used to
+                # move the right/bottom edge by a pixel after screenshot scaling.
+                height=bottom-y
+        vh=min(height,H-y)
+        if end-start<height*.85:
             vh=min(vh,int(end)-y)
             # Preserve the horizontal composer boundary; occupancy may include a
             # few mixed rows, so take the strongest transition near its end.
-            if end<H:vh=min(vh,_edge(im,1,int(end),x+pad,min(W,x+size-pad),limit=3)-y)
-        if size<12 or vh<8 or x<0 or y<0 or x+size>W:continue
+            if end<H:vh=min(vh,_edge(im,1,int(end),x+pad,min(W,x+width-pad),limit=3)-y)
+        if width<12 or height<12 or vh<8 or x<0 or y<0 or x+width>W:continue
         # A pure outline UI icon has very low filled area inside its square.
-        fill=float(fg[y:y+vh,x:x+size].mean())
+        fill=float(fg[y:y+vh,x:x+width].mean())
         if fill<.65:continue
-        b=dict(x=int(x),y=int(y),w=int(size),h=int(size),score=round(min(.98,fill),3),enabled=True,method='right-layout')
-        if vh<size:b['clip_h']=int(vh)
+        b=dict(x=int(x),y=int(y),w=int(width),h=int(height),score=round(min(.98,fill),3),enabled=True,method='right-layout')
+        if vh<height:b['clip_h']=int(vh)
         b['radius'],b['edge_quality']=geometric_radius(im,b)
         candidates.append(b)
     radius=shared_radius(candidates)

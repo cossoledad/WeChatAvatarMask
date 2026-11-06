@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": {"dev": "node server.mjs", "check": "node --check app.js"},
+  "scripts": {"dev": "node server.mjs", "check": "node --check app.js", "test": "node --test image-viewer.test.mjs"},
   "engines": {"node": ">=20"}
 }

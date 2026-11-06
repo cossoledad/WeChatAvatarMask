@@ -2,7 +2,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 const root = new URL('./', import.meta.url);
-const files = {'/':'index.html','/index.html':'index.html','/app.js':'app.js','/style.css':'style.css'};
+const files = {'/':'index.html','/index.html':'index.html','/app.js':'app.js','/style.css':'style.css','/image-viewer.js':'image-viewer.js'};
 const types = {html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
 const host=process.argv.includes('--lan')?'0.0.0.0':'127.0.0.1';
 http.createServer(async(req,res)=>{

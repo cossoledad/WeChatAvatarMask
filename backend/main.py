@@ -31,7 +31,7 @@ MAX_TOTAL_BYTES=440*1024*1024
 sessions={}
 lock=RLock()
 processing=BoundedSemaphore(1)
-app=FastAPI(title='Avatar Mask · 本地头像替换',version='0.2.0')
+app=FastAPI(title='Avatar Mask · 本地头像替换',version='0.3.0')
 app.add_middleware(CORSMiddleware,allow_origins=['http://127.0.0.1:5178','http://localhost:5178'],allow_methods=['GET','POST','DELETE'],allow_headers=['Content-Type'])
 
 
@@ -142,7 +142,7 @@ def create(source,replacement,images,threshold,min_size,max_size):
 
 
 @app.get('/api/health')
-def health():return dict(status='ok',processing='local',engine='right-layout + multiscale NCC',version='0.2.0')
+def health():return dict(status='ok',processing='local',engine='right-layout + multiscale NCC',version='0.3.0')
 
 
 @app.get('/api/default-avatar')
@@ -185,6 +185,18 @@ def asset(sid:str,kind:str):
     return Response(png(getattr(s,kind)),media_type='image/png',headers={'Cache-Control':'no-store'})
 
 
+@app.post('/api/sessions/{sid}/replacement')
+def replace_avatar(sid:str,replacement:UploadFile=File(...)):
+    rep=read_upload(replacement)
+    with lock:
+        s=get_session(sid)
+        delta=rep.nbytes-s.replacement.nbytes
+        if s.size+delta>MAX_SESSION_BYTES or sum(item.size for item in sessions.values())+delta>MAX_TOTAL_BYTES:
+            raise HTTPException(413,'头像过大，请选择较小的图片')
+        s.replacement=rep
+    return dict(updated=True)
+
+
 @app.get('/api/sessions/{sid}/images/{iid}')
 def original(sid:str,iid:str):
     return Response(png(get_image(get_session(sid),iid)['data']),media_type='image/png',headers={'Cache-Control':'no-store'})
@@ -208,6 +220,7 @@ def preview(sid:str,iid:str,body:Edits):
 @app.post('/api/sessions/{sid}/export')
 def export(sid:str,body:Export):
     s=get_session(sid)
+    replacement=s.replacement
     unknown=set(body.edits)-{i['id'] for i in s.images}
     if unknown:raise HTTPException(422,'导出包含未知图片')
     if set(body.radii)-{i['id'] for i in s.images}:raise HTTPException(422,'圆角参数包含未知图片')
@@ -217,7 +230,7 @@ def export(sid:str,body:Export):
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
         for index,i in enumerate(s.images):
             if i['id'] not in checked:continue
-            boxes=checked[i['id']]; result=render(i['data'],s.source,s.replacement,boxes)
+            boxes=checked[i['id']]; result=render(i['data'],s.source,replacement,boxes)
             name=re.sub(r'[^\w.\-]','_',Path(i['name']).stem)[:100]
             z.writestr(f'{index+1:02d}-{name}.png',png(result))
             audit.append(dict(file=i['name'],boxes=boxes,changed_pixels=int(np.count_nonzero(np.any(result!=i['data'],axis=2)))))
