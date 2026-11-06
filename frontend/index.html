@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f6f8f5"><title>头像隐私 · 聊天截图一键替换</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header class="topbar"><a href="/" class="brand"><span class="brand-mark">◈</span> 头像隐私</a><span class="local-status" id="health">正在连接</span></header>
+<main>
+  <section class="hero" id="hero"><span class="eyebrow">放心分享每一段对话</span><h1>聊天照常分享，<br>头像轻松换掉<span>。</span></h1><p>选择聊天截图，自动替换右侧自己的头像。</p><div class="default-avatar"><img src="/api/default-avatar" alt="内置小熊头像"><span>使用内置小熊头像</span><span class="mini-dot"></span><span>无需原头像</span></div></section>
+  <section class="upload-section" id="uploadSection">
+    <label class="upload-card" id="dropzone"><input id="screenshots" type="file" multiple accept="image/jpeg,image/png,image/webp"><span class="upload-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m3 16 5-5 5 5m-2-2 4-4 6 6"/><circle cx="9" cy="8" r="1"/></svg></span><strong id="uploadTitle">选择聊天截图</strong><span id="uploadSubtitle">支持批量选择，选好即自动处理</span><small>JPEG / PNG / WebP · 每次最多 30 张</small></label>
+    <div id="processing" class="processing" role="status" hidden><span class="spinner"></span><strong>正在替换头像</strong><span>正在处理，请稍候…</span></div>
+    <p class="local-note">图片在电脑本地处理 · 每张截图的圆角统一</p>
+    <button id="demo" class="quiet demo" hidden>试试本机示例</button>
+  </section>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <section id="results" hidden><div class="results-heading"><div><h2 id="summary">替换完成</h2><p>轻点图片，查看或调整</p></div><button id="reset" class="quiet">重新选择</button></div><div id="cards" class="cards"></div><p class="review-note">分享前请检查结果。昵称与聊天文字不会自动隐藏。</p></section>
+  <footer id="footer">少一点暴露，多一点安心。</footer>
+</main>
+<div id="savebar" class="savebar" hidden><div class="savebar-inner"><span id="saveSummary"></span><button id="saveAll" class="primary">保存结果 <span>↓</span></button></div></div>
+<dialog id="reviewDialog"><div class="sheet-header"><div><strong id="detailTitle">检查截图</strong><small id="detailSubtitle"></small></div><button id="closeDetail" class="icon-button" aria-label="关闭检查">×</button></div><div class="sheet-body"><div class="detail-tabs" role="group" aria-label="预览模式"><button id="resultView" class="selected">替换后</button><button id="editView">原图与调整</button></div><div class="preview-tools"><span>可放大后滑动查看</span><button id="zoom" class="quiet">放大检查</button></div><div id="previewScroll" class="preview-scroll"><div id="stage" class="stage"><img id="preview" alt="聊天截图预览"><div id="boxLayer" hidden></div></div><div id="previewLoading" class="preview-loading" hidden>正在更新…</div></div><div class="radius-control"><label for="radius">整图圆角 <output id="radiusValue"></output></label><input id="radius" type="range" min="0" max="40" step="0.5"><small>同一张截图中的全部头像使用同一圆角。</small></div><div id="adjustments" hidden><div class="adjust-help"><span>点击头像框可取消或恢复替换</span><button id="addBox" class="quiet">＋ 补选头像</button></div><p id="addHint" class="add-hint" hidden>点击遗漏头像的中心添加框，再点击“完成补选”。</p><div id="boxList" class="box-list"></div><details id="fineTune"><summary>精细调整所选框</summary><div class="coordinate-fields"><label>X<input id="editX" type="number" min="0" inputmode="numeric"></label><label>Y<input id="editY" type="number" min="0" inputmode="numeric"></label><label>宽<input id="editW" type="number" min="8" inputmode="numeric"></label><label>完整高度<input id="editH" type="number" min="8" inputmode="numeric"></label><label>可见高度<input id="editClipH" type="number" min="1" inputmode="numeric"></label></div><button id="removeBox" class="remove-button">删除所选框</button></details></div></div><div class="sheet-footer"><button id="saveCurrent" class="primary">保存这张图片 <span>↓</span></button></div></dialog>
+<script type="module" src="/app.js"></script>
+</body></html>
+
+

@@ -1,0 +1,8 @@
+{
+  "name": "avatar-mask-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev": "node server.mjs", "check": "node --check app.js"},
+  "engines": {"node": ">=20"}
+}
