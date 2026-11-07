@@ -2,7 +2,7 @@
 
 批量选择聊天截图后自动替换**右侧自己的头像**。无需上传原头像，默认使用内置小熊图片；点击右上角头像可上传自己的替换图片，也会直接应用到当前批次。同一张截图内全部头像使用同一个圆角半径，不同截图分别估计。左侧头像、正文、昵称、聊天图片及内嵌小图保持原样。
 
-Python / OpenCV / FastAPI 后端与独立 Node.js 前端分离，图片在本机处理，无账号、云端模型或外部字体。首页只有截图选择入口；结果只显示处理后的图片，详情仅保留圆角与保存。
+Python / OpenCV / FastAPI 后端与独立静态前端分离，开发时可用 Node.js 提供页面，ARM 部署时由 Python 直接提供页面与接口。图片在本机处理，无账号、云端模型或外部字体。首页只有截图选择入口；结果只显示处理后的图片，详情仅保留圆角与保存。
 
 ## 启动
 
@@ -64,6 +64,23 @@ API 仍兼容可选 `source` / `replacement` 参数，提供原版模板匹配�
 | `DELETE /api/sessions/{sid}` | 释放任务 |
 
 技术细节与训练路线见 [技术方案](docs/TECHNICAL_DESIGN.md)。
+
+## ARM Ubuntu 部署
+
+Radxa Dragon Q6A（Ubuntu 24.04.5 / arm64）使用 **systemd + Python 3.12 单服务**，直接提供静态页面和 API，不使用 Nginx，也无需 Node.js。包含一键安装、按内存分档配置、开机启动、日志、更新失败恢复和版本回滚。仅用于局域网。
+
+```powershell
+# 在 Windows 打包当前代码（不包含测试图片或 .venv）
+.venv\Scripts\python.exe scripts/package_deploy.py
+```
+
+将发布包传到设备，解压后执行：
+
+```bash
+sudo bash deploy/install.sh
+```
+
+安装完成会打印设备的访问地址，默认端口为 **30127**。完整传输、维护和回滚步骤见 [Q6A 部署说明](docs/DEPLOYMENT_ARM_UBUNTU.md)。
 
 ## 验证
 

@@ -4,6 +4,7 @@ const $=id=>document.getElementById(id);
 let session=null,busy=false,current=0,generation=0,timer,renderController=null,previewUrl=null;
 let replacementFile=null,replacementUrl=null,replacementRevision=0;
 const cardUrls=new Map();
+const limits={max_upload_mb:15,max_pixels:16_000_000};
 const active=()=>session?.images[current];
 const viewer=new ImageViewer($('imageViewport'),$('stage'));
 const jsonPost=data=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
@@ -27,7 +28,7 @@ async function clear(){
 async function run(files){
   if(busy||!files.length)return;
   if(files.length>30){notice('最多选择 30 张。');return;}
-  if(files.some(f=>f.size>15*1024*1024)){notice('单张图片不能超过 15 MB。');return;}
+  if(files.some(f=>f.size>limits.max_upload_mb*1024*1024)){notice(`单张图片不能超过 ${limits.max_upload_mb} MB。`);return;}
   setBusy(true,true);notice('');
   try{
     await clear();const body=new FormData();files.forEach(file=>body.append('screenshots',file));if(replacementFile)body.append('replacement',replacementFile);
@@ -41,7 +42,7 @@ async function run(files){
 $('screenshots').onchange=event=>run([...event.target.files]);
 $('replacement').onchange=async event=>{
   const file=event.target.files[0];if(!file||busy)return;
-  if(file.size>15*1024*1024){notice('头像不能超过 15 MB。');event.target.value='';return;}
+  if(file.size>limits.max_upload_mb*1024*1024){notice(`头像不能超过 ${limits.max_upload_mb} MB。`);event.target.value='';return;}
   setBusy(true);notice('');cancelRender();
   try{
     if(file.type&&!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('请选择 JPEG、PNG 或 WebP 头像。');
@@ -49,7 +50,7 @@ $('replacement').onchange=async event=>{
     // destroy the working avatar selection or the current batch.
     const candidateUrl=URL.createObjectURL(file),image=new Image();image.src=candidateUrl;
     try{await image.decode();}catch{throw new Error('无法读取头像。');}finally{URL.revokeObjectURL(candidateUrl);}
-    if(image.naturalWidth*image.naturalHeight>16_000_000)throw new Error('头像不能超过 1600 万像素。');
+    if(image.naturalWidth*image.naturalHeight>limits.max_pixels)throw new Error(`头像不能超过 ${limits.max_pixels/10_000} 万像素。`);
     if(session){const body=new FormData();body.append('replacement',file);await request(`/api/sessions/${session.id}/replacement`,{method:'POST',body});}
     replacementFile=file;replacementRevision++;
     const old=replacementUrl;replacementUrl=URL.createObjectURL(file);$('targetAvatar').src=replacementUrl;if(old)URL.revokeObjectURL(old);
@@ -125,4 +126,4 @@ $('saveAll').onclick=async()=>{
     else{const edits=Object.fromEntries(session.images.map(im=>[im.id,im.boxes])),radii=Object.fromEntries(session.images.map(im=>[im.id,im.radius]));const response=await request(`/api/sessions/${session.id}/export`,jsonPost({edits,radii}));download(await response.blob(),'avatar-mask.zip');}
   }catch(error){notice(error.message);}finally{setBusy(false);updateSummary();}
 };
-request('/api/health').catch(error=>notice(error.message));
+request('/api/health').then(response=>response.json()).then(data=>{if(data.limits)Object.assign(limits,data.limits);}).catch(error=>notice(error.message));

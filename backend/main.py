@@ -17,21 +17,30 @@ import numpy as np
 import cv2
 
 from .detection import detect
-from .imaging import decode, png, render
+from .imaging import decode, png, render, MAX_PIXELS
 from .layout import detect_right, shared_radius
+from .settings import integer
+from .web import frontend_file, LanOnlyMiddleware
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE='D579F7B0CC5034C39F4CE4847719A95D.jpg'
 REPLACEMENT='F5AC4F279953D1A7B46643AE05353084.jpg'
 DEFAULT_AVATAR=ROOT/'backend'/'assets'/'default-avatar.jpg'
-TTL=30*60
-MAX_UPLOAD=15*1024*1024
-MAX_SESSION_BYTES=220*1024*1024
-MAX_TOTAL_BYTES=440*1024*1024
+TTL=integer('AVATAR_MASK_SESSION_TTL',30*60,60,86400)
+MAX_UPLOAD=integer('AVATAR_MASK_MAX_UPLOAD_MB',15,1,50)*1024*1024
+MAX_SESSION_BYTES=integer('AVATAR_MASK_MAX_SESSION_MB',220,32,2048)*1024*1024
+MAX_TOTAL_BYTES=integer('AVATAR_MASK_MAX_TOTAL_MB',440,32,4096)*1024*1024
+MAX_SESSIONS=integer('AVATAR_MASK_MAX_SESSIONS',4,1,16)
+if MAX_TOTAL_BYTES<MAX_SESSION_BYTES:raise ValueError('AVATAR_MASK_MAX_TOTAL_MB must be >= AVATAR_MASK_MAX_SESSION_MB')
+cv2.setNumThreads(integer('AVATAR_MASK_CV_THREADS',2,1,8))
 sessions={}
 lock=RLock()
 processing=BoundedSemaphore(1)
-app=FastAPI(title='Avatar Mask · 本地头像替换',version='0.3.0')
+PRODUCTION=bool(integer('AVATAR_MASK_PRODUCTION',0,0,1))
+app=FastAPI(title='Avatar Mask · 本地头像替换',version='0.3.0',
+            docs_url=None if PRODUCTION else '/docs',redoc_url=None if PRODUCTION else '/redoc',
+            openapi_url=None if PRODUCTION else '/openapi.json')
+if PRODUCTION:app.add_middleware(LanOnlyMiddleware)
 app.add_middleware(CORSMiddleware,allow_origins=['http://127.0.0.1:5178','http://localhost:5178'],allow_methods=['GET','POST','DELETE'],allow_headers=['Content-Type'])
 
 
@@ -81,7 +90,7 @@ def get_session(sid):
     with lock:
         purge()
         if sid not in sessions:
-            raise HTTPException(404,'任务已清除或已超过 30 分钟，请重新载入图片')
+            raise HTTPException(404,'任务已清除或已过期，请重新选择图片')
         return sessions[sid]
 
 
@@ -110,7 +119,7 @@ def validated(boxes,im,radius=None):
 def read_upload(file):
     try:
         data=file.file.read(MAX_UPLOAD+1)
-        if len(data)>MAX_UPLOAD:raise HTTPException(413,'每个文件不能超过 15 MB')
+        if len(data)>MAX_UPLOAD:raise HTTPException(413,f'每个文件不能超过 {MAX_UPLOAD//1024//1024} MB')
         return decode(data)
     except ValueError as exc:
         raise HTTPException(422,str(exc)) from exc
@@ -127,7 +136,7 @@ def create(source,replacement,images,threshold,min_size,max_size):
     try:
         with lock:
             purge()
-            if len(sessions)>=4 or sum(s.size for s in sessions.values())+size>MAX_TOTAL_BYTES:
+            if len(sessions)>=MAX_SESSIONS or sum(s.size for s in sessions.values())+size>MAX_TOTAL_BYTES:
                 raise HTTPException(429,'本地内存任务已满，请先清除已有任务')
         items=[]
         for name,im in images:
@@ -142,7 +151,7 @@ def create(source,replacement,images,threshold,min_size,max_size):
 
 
 @app.get('/api/health')
-def health():return dict(status='ok',processing='local',engine='right-layout + multiscale NCC',version='0.3.0')
+def health():return dict(status='ok',processing='local',engine='right-layout + multiscale NCC',version='0.3.0',limits=dict(max_upload_mb=MAX_UPLOAD//1024//1024,max_pixels=MAX_PIXELS))
 
 
 @app.get('/api/default-avatar')
@@ -242,3 +251,11 @@ def export(sid:str,body:Export):
 def delete(sid:str):
     with lock:sessions.pop(sid,None)
     return dict(deleted=True)
+
+
+@app.get('/',include_in_schema=False)
+def homepage():return frontend_file('index.html')
+
+
+@app.get('/{asset}',include_in_schema=False)
+def static_asset(asset:str):return frontend_file(asset)

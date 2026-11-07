@@ -5,8 +5,9 @@ import warnings
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
+from .settings import integer
 
-MAX_PIXELS = 16_000_000
+MAX_PIXELS = integer('AVATAR_MASK_MAX_PIXELS',16_000_000,1_000_000,64_000_000)
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
 
@@ -18,7 +19,7 @@ def decode(data: bytes) -> np.ndarray:
                 if im.format not in {'JPEG', 'PNG', 'WEBP'}:
                     raise ValueError('仅支持 JPEG、PNG 和 WebP')
                 if im.width * im.height > MAX_PIXELS:
-                    raise ValueError('单张图片不能超过 1600 万像素')
+                    raise ValueError(f'单张图片不能超过 {MAX_PIXELS//10_000} 万像素')
                 # Flatten transparency on white, apply phone orientation, discard metadata.
                 rgba = ImageOps.exif_transpose(im).convert('RGBA')
                 flat = Image.new('RGBA', rgba.size, 'white')

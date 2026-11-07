@@ -1,0 +1,33 @@
+[Unit]
+Description=WeChat Avatar Mask LAN web application
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=wechat-avatar-mask
+Group=wechat-avatar-mask
+WorkingDirectory=/opt/wechat-avatar-mask/current
+EnvironmentFile=/etc/wechat-avatar-mask.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=AVATAR_MASK_PRODUCTION=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+ExecStart=/opt/wechat-avatar-mask/current/.venv/bin/python -m uvicorn backend.main:app --host ${AVATAR_MASK_HTTP_LISTEN} --port ${AVATAR_MASK_HTTP_PORT} --workers 1 --limit-concurrency 8 --backlog 32 --timeout-keep-alive 5 --timeout-graceful-shutdown 30 --no-access-log --no-proxy-headers
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
