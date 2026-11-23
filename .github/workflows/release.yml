@@ -1,0 +1,64 @@
+name: ARM64 release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag (v1.2.3)
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Validate tag and target
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]
+          test "$(uname -m)" = aarch64
+          test "$(git rev-list -n 1 "refs/tags/$TAG")" = "$(git rev-parse HEAD)"
+      - name: Collect binary dependencies
+        run: |
+          python -m pip download --only-binary=:all: -r deploy/requirements-arm64.txt -d wheels
+          python -m pip install --no-index --find-links wheels -r deploy/requirements-arm64.txt
+          python -m pip check
+          python -c 'from backend.main import app,DEFAULT_AVATAR; assert DEFAULT_AVATAR.is_file()'
+          python -m compileall -q backend deploy scripts/package_deploy.py
+          for file in deploy/*.sh; do bash -n "$file"; done
+          node --check frontend/app.js
+      - name: Package
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: python scripts/package_deploy.py --wheelhouse wheels --version "$TAG" --repository "$REPOSITORY" --commit "$(git rev-parse HEAD)"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          prerelease=false
+          if [[ "$TAG" == *-* ]]; then prerelease=true; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --json isDraft --jq '.isDraft')" = true
+            gh release upload "$TAG" --clobber artifacts/wechat-avatar-mask-arm64.tar.gz artifacts/wechat-avatar-mask-arm64.tar.gz.sha256
+          else
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --generate-notes --prerelease="$prerelease" artifacts/wechat-avatar-mask-arm64.tar.gz artifacts/wechat-avatar-mask-arm64.tar.gz.sha256
+          fi
+          # Do not expose a release until both assets have uploaded successfully.
+          gh release edit "$TAG" --draft=false --prerelease="$prerelease"

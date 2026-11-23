@@ -6,6 +6,10 @@ source "$SCRIPT_DIR/common.sh"
 COMMAND=${1:-status}
 
 case "$COMMAND" in
+    update)
+        shift
+        exec "$SCRIPT_DIR/../.venv/bin/python" "$SCRIPT_DIR/update.py" "$@"
+        ;;
     status)
         systemctl --no-pager --full status "$APP_UNIT"
         show_urls
@@ -68,10 +72,10 @@ case "$COMMAND" in
         activate_link "$old" previous
         trap - ERR INT TERM
         printf 'Active release: %s\n' "$target"
-        printf '%s\n' 'In-memory image tasks were cleared; select screenshots again.'
+        printf '%s\n' 'Persistent avatars and task cache were preserved.'
         ;;
     --help|-h)
-        printf '%s\n' 'Usage: sudo bash deploy/manage.sh {status|logs [LINES]|health|versions|start|restart|stop|rollback [RELEASE_ID]}'
+        printf '%s\n' 'Usage: sudo bash deploy/manage.sh {update [TAG] [--check]|status|logs [LINES]|health|versions|start|restart|stop|rollback [RELEASE_ID]}'
         ;;
     *) fail "Unknown command: $COMMAND" ;;
 esac

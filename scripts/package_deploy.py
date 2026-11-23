@@ -37,8 +37,19 @@ def source_files():
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,default=ROOT/'artifacts/wechat-avatar-mask-arm64.tar.gz')
+    parser.add_argument('--wheelhouse',type=Path,help='Include ARM64 CPython 3.12 binary dependencies')
+    parser.add_argument('--version',default='local')
+    parser.add_argument('--repository',default='cossoledad/WeChatAvatarMask')
+    parser.add_argument('--commit',default='')
     args=parser.parse_args()
     files=source_files()
+    files['deploy/release.json']=(json.dumps(dict(version=args.version,repository=args.repository,commit=args.commit),indent=2)+'\n').encode()
+    if args.wheelhouse:
+        wheels=sorted(args.wheelhouse.glob('*.whl'))
+        if not wheels:parser.error('The wheelhouse is empty')
+        for wheel in wheels:
+            if wheel.is_symlink() or not wheel.is_file():parser.error(f'Invalid wheel: {wheel}')
+            files[f'wheels/{wheel.name}']=wheel.read_bytes()
     manifest={'format':1,'target':'Ubuntu 24.04 arm64 / Python 3.12',
               'files':{name:hashlib.sha256(content).hexdigest() for name,content in files.items()}}
     files['deploy/source-manifest.json']=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode('utf-8')

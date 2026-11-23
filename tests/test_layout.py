@@ -1,7 +1,3 @@
-from io import BytesIO
-import json
-import zipfile
-
 import cv2
 import numpy as np
 from fastapi.testclient import TestClient
@@ -52,7 +48,7 @@ def test_source_free_partial_avatar_and_negative():
     assert detect_right(np.full_like(im,237))==[]
 
 
-def test_upload_only_screenshots_default_avatar_and_export_radius():
+def test_upload_only_screenshots_default_avatar_and_render_radius():
     client=TestClient(app)
     im=chat_scene()
     response=client.post('/api/sessions',files={'screenshots':('chat.png',png(im),'image/png')})
@@ -68,13 +64,11 @@ def test_upload_only_screenshots_default_avatar_and_export_radius():
         assert thumb.status_code==200
         # Even contradictory legacy per-box values cannot produce mixed radii.
         edits=item['boxes'];edits[0]['radius']=1;edits[1]['radius']=9
-        result=client.post(f'/api/sessions/{sid}/export',json={'edits':{iid:edits},'radii':{iid:6}})
+        result=client.post(f'/api/sessions/{sid}/images/{iid}/render',json={'boxes':edits,'radius':6})
         assert result.status_code==200,result.text
-        with zipfile.ZipFile(BytesIO(result.content)) as z:
-            audit=json.loads(z.read('audit.json'))
-            assert {b['radius'] for b in audit['images'][0]['boxes']}=={6}
-            out=decode(z.read('01-chat.png'))
-            assert np.array_equal(out[:,:340],im[:,:340])
+        assert {b['radius'] for b in client.get(f'/api/sessions/{sid}').json()['images'][0]['boxes']}=={6}
+        out=decode(result.content)
+        assert np.array_equal(out[:,:340],im[:,:340])
         bad=client.post(f'/api/sessions/{sid}/images/{iid}/render',json={'boxes':edits,'radius':30})
         assert bad.status_code==422
     finally:client.delete(f'/api/sessions/{sid}')

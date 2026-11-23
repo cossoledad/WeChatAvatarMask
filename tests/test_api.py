@@ -1,6 +1,3 @@
-from io import BytesIO
-import json
-import zipfile
 import numpy as np
 from fastapi.testclient import TestClient
 from backend.main import app,sessions
@@ -9,7 +6,7 @@ from backend.imaging import png,decode
 client=TestClient(app)
 
 
-def test_upload_manual_render_export_clear():
+def test_upload_manual_render_restore_clear():
     im=np.full((150,200,3),237,np.uint8)
     src=np.random.default_rng(3).integers(0,256,(64,64,3),dtype=np.uint8)
     rep=np.full((80,80,3),[20,170,100],np.uint8)
@@ -21,12 +18,11 @@ def test_upload_manual_render_export_clear():
     assert bad.status_code==422
     r=client.post(f'/api/sessions/{sid}/images/{iid}/render',json={'boxes':[box]})
     assert r.status_code==200;out=decode(r.content);assert np.array_equal(out[40,30],rep[0,0])
-    export=client.post(f'/api/sessions/{sid}/export',json={'edits':{iid:[box]}})
-    assert export.status_code==200
-    with zipfile.ZipFile(BytesIO(export.content)) as z:
-        assert sorted(z.namelist())==['01-chat.png','audit.json']
-        assert np.array_equal(decode(z.read('01-chat.png')),out)
-        assert json.loads(z.read('audit.json'))['images'][0]['changed_pixels']>0
+    sessions.clear()
+    restored=client.get(f'/api/sessions/{sid}').json()['images'][0]
+    assert restored['boxes'][0]['radius']==5
+    again=client.post(f'/api/sessions/{sid}/images/{iid}/render',json={'boxes':restored['boxes'],'radius':restored['radius']})
+    assert np.array_equal(decode(again.content),out)
     assert client.delete(f'/api/sessions/{sid}').status_code==200
     assert client.get(f'/api/sessions/{sid}/images/{iid}').status_code==404
 
@@ -45,8 +41,8 @@ def test_cors_only_local_frontend():
     assert 'access-control-allow-origin' not in client.options('/api/demo',headers=headers).headers
 
 
-def test_expiration():
+def test_memory_expiration():
     from backend.main import Session,TTL
-    from time import monotonic
-    sessions['expired']=Session(np.zeros((1,1,3),np.uint8),np.zeros((1,1,3),np.uint8),[],monotonic()-TTL-1)
+    from time import time
+    sessions['expired']=Session(np.zeros((1,1,3),np.uint8),np.zeros((1,1,3),np.uint8),[],time()-TTL-1,accessed=time()-TTL-1)
     assert client.get('/api/sessions/expired/assets/source').status_code==404

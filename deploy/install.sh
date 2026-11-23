@@ -91,10 +91,13 @@ for file in "$SOURCE"/backend/*.py; do install -m 644 "$file" "$RELEASE/backend/
 install -m 644 "$SOURCE/backend/assets/default-avatar.jpg" "$RELEASE/backend/assets/"
 for name in index.html style.css app.js image-viewer.js; do install -m 644 "$SOURCE/frontend/$name" "$RELEASE/frontend/"; done
 for file in "$SCRIPT_DIR"/*.sh "$SCRIPT_DIR"/*.py "$SCRIPT_DIR"/*.service "$SCRIPT_DIR"/requirements-arm64.txt; do install -m 644 "$file" "$RELEASE/deploy/"; done
+if [[ -f $SCRIPT_DIR/release.json ]]; then install -m 644 "$SCRIPT_DIR/release.json" "$RELEASE/deploy/"; fi
 python3.12 "$SCRIPT_DIR/configure.py" render --listen "$HTTP_LISTEN" --port "$HTTP_PORT" --memory-mb "$MEMORY_MB" --output "$RELEASE/.rendered"
 python3.12 -m venv "$RELEASE/.venv"
 # Never silently compile NumPy/OpenCV on the board or install into system Python.
-"$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: -r "$RELEASE/deploy/requirements-arm64.txt"
+PIP_SOURCE=()
+if [[ -d $SOURCE/wheels ]]; then PIP_SOURCE=(--no-index --find-links "$SOURCE/wheels"); fi
+"$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: "${PIP_SOURCE[@]}" -r "$RELEASE/deploy/requirements-arm64.txt"
 "$RELEASE/.venv/bin/python" -m pip check
 (cd -- "$RELEASE" && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -c 'import cv2,numpy,PIL; from backend.main import app,DEFAULT_AVATAR; assert DEFAULT_AVATAR.is_file(); print("Runtime imports OK; OpenCV",cv2.__version__)')
 "$RELEASE/.venv/bin/python" -m pip freeze > "$RELEASE/installed-requirements.txt"
@@ -103,6 +106,7 @@ chmod -R a+rX "$RELEASE"
 
 getent group "$APP_USER" >/dev/null || groupadd --system "$APP_USER"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --gid "$APP_USER" --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$APP_USER"
+install -d -m 700 -o "$APP_USER" -g "$APP_USER" /var/lib/wechat-avatar-mask
 OLD_RELEASE=''
 if [[ -L $APP_ROOT/current ]]; then OLD_RELEASE=$(release_path "$APP_ROOT/current") || fail 'Current release is invalid'; fi
 BACKUP="/var/lib/wechat-avatar-mask-deploy/$RELEASE_ID"
@@ -155,5 +159,5 @@ ACTIVATING=0
 trap - ERR INT TERM
 printf 'Installed release: %s\n' "$RELEASE_ID"
 show_urls
-printf '%s\n' 'No firewall rules were changed. Restarting/updating releases clears in-memory image tasks.'
+printf '%s\n' 'Avatars, preferences and image tasks are preserved in /var/lib/wechat-avatar-mask.'
 printf '%s\n' 'Manage: sudo bash /opt/wechat-avatar-mask/current/deploy/manage.sh status'
