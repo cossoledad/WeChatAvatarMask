@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
-from backend.imaging import coverage, png, decode, render
+from backend.imaging import coverage, cover, png, decode, render, visible_rows
 from backend.layout import detect_right
 from backend.main import app, sessions
 
@@ -46,6 +47,59 @@ def test_source_free_partial_avatar_and_negative():
     assert boxes[-1].get('clip_h')==18
     assert len({b['radius'] for b in boxes})==1
     assert detect_right(np.full_like(im,237))==[]
+
+
+def clipped_scene():
+    im=chat_scene()
+    im[:60]=250  # The chat header hides the first 22 rows of a 40px avatar.
+    im[60:78,350:390]=im[122:140,350:390]
+    im[560:578,350:390]=im[100:118,350:390]  # Composer: opposite crop direction.
+    return im
+
+
+@pytest.mark.parametrize('crop_header',[False,True])
+def test_top_and_bottom_crops_keep_the_correct_avatar_rows(crop_header):
+    im=clipped_scene()
+    if crop_header:im=im[60:].copy()
+    boxes=detect_right(im)
+    assert len(boxes)==5
+    top,bottom=boxes[0],boxes[-1]
+    assert (top['h'],top['clip_h'],top['clip_top'])==(40,18,22)
+    assert bottom['clip_h']==18 and not bottom.get('clip_top')
+    assert len({b['radius'] for b in boxes})==1
+    replacement=np.full((40,40,3),[220,30,30],np.uint8)
+    replacement[20:]=[30,60,220]
+    out=render(im,None,replacement,boxes)
+    mask=np.zeros(im.shape[:2],bool)
+    for b in boxes:
+        x,y,w,h=(b[k] for k in ('x','y','w','h'));rows=visible_rows(b,im.shape[0]);vh=rows.stop-rows.start
+        a=coverage(w,h,b['radius'])[rows]
+        opaque=a==1
+        assert np.array_equal(out[y:y+vh,x:x+w][opaque],cover(replacement,w,h)[rows][opaque])
+        mask[y:y+vh,x:x+w]|=a>0
+    assert np.array_equal(out[~mask],im[~mask])
+    assert np.array_equal(out[top['y'],top['x']],replacement[22,0])  # No false rounded corner along the cut.
+    assert np.array_equal(out[top['y']+17,top['x']],im[top['y']+17,top['x']])  # Real bottom corner remains round.
+
+
+def test_top_crop_survives_api_render_and_cache_restore():
+    client=TestClient(app)
+    im=clipped_scene()
+    replacement=np.full((40,40,3),[220,30,30],np.uint8);replacement[20:]=[30,60,220]
+    response=client.post('/api/sessions',files=[('screenshots',('chat.png',png(im),'image/png')),('replacement',('avatar.png',png(replacement),'image/png'))])
+    assert response.status_code==200,response.text
+    task=response.json();sid=task['id'];item=task['images'][0];endpoint=f"/api/sessions/{sid}/images/{item['id']}/render"
+    assert item['boxes'][0]['clip_top']==22
+    edits=dict(boxes=item['boxes'],radius=item['radius'])
+    output=client.post(endpoint,json=edits)
+    assert output.status_code==200,output.text
+    assert np.array_equal(decode(output.content)[60,370],replacement[22,20])
+    sessions.clear()
+    restored=client.get(f'/api/sessions/{sid}').json()['images'][0]
+    assert restored['boxes'][0]['clip_top']==22
+    assert client.post(endpoint,json=dict(boxes=restored['boxes'],radius=restored['radius'])).content==output.content
+    bad=[dict(b) for b in restored['boxes']];bad[0]['clip_top']=30
+    assert client.post(endpoint,json=dict(boxes=bad)).status_code==422
 
 
 def test_upload_only_screenshots_default_avatar_and_render_radius():

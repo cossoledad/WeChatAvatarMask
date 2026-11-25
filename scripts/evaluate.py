@@ -10,7 +10,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
-from backend.imaging import decode,png,render,coverage
+from backend.imaging import decode,png,render,coverage,visible_rows
 from backend.detection import detect
 from backend.layout import detect_right, shared_radius
 
@@ -37,8 +37,8 @@ def main():
         overlay=Image.fromarray(im); draw=ImageDraw.Draw(overlay)
         for i,b in enumerate(boxes):
             x,y,w,h=[b[k] for k in ('x','y','w','h')]
-            vh=b.get('clip_h',h)
-            mask[y:y+vh,x:x+w] |= coverage(w,h,b['radius'])[:vh]>0
+            rows=visible_rows(b,im.shape[0]);vh=rows.stop-rows.start
+            mask[y:y+vh,x:x+w] |= coverage(w,h,b['radius'])[rows]>0
             draw.rectangle((x-2,y-2,x+w+1,y+vh+1),outline='#00a781',width=3)
             draw.text((x-85,y),f"{i+1}: {b['score']:.3f}",fill='#00745c')
             before=Image.fromarray(im).crop((x-5,y-5,x+w+5,y+h+5)).resize((240,240))

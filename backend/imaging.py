@@ -82,11 +82,19 @@ def background(im: np.ndarray, x: int, y: int, w: int, h: int) -> tuple[np.ndarr
     return bg, float(np.median(np.linalg.norm(values-bg, axis=1)))
 
 
-def edge_background(im: np.ndarray,x:int,y:int,w:int,h:int,visible_h:int,radius:float) -> np.ndarray:
+def visible_rows(box:dict,image_height:int) -> slice:
+    """Rows within the full avatar that remain visible at screenshot y."""
+    top=int(box.get('clip_top') or 0)
+    height=int(box['h'])
+    count=min(height-top,int(box.get('clip_h') or height-top),image_height-int(box['y']))
+    return slice(top,top+count)
+
+
+def edge_background(im: np.ndarray,x:int,y:int,w:int,h:int,visible_h:int,radius:float,clip_top:int=0) -> np.ndarray:
     """Estimate each corner from outside strips, avoiding the old avatar.
 
-    A clipped avatar's bottom samples stay above the composer. Separate corner
-    estimates also support gently varying backgrounds instead of one flat RGB.
+    Skip strips beyond an occluded edge, including the header and composer.
+    Separate corner estimates support gently varying backgrounds.
     """
     H,W=im.shape[:2]
     base,noise=background(im,x,y,w,visible_h)
@@ -99,7 +107,7 @@ def edge_background(im: np.ndarray,x:int,y:int,w:int,h:int,visible_h:int,radius:
         rows=(max(y,gy-reach),gy) if lower else (gy,gy+reach)
         outside_cols=(gx+2,gx+6) if right else (gx-6,gx-2)
         rects=[(outside_cols[0],rows[0],outside_cols[1],rows[1])]
-        if not lower or visible_h==h:
+        if (not lower and clip_top==0) or (lower and clip_top+visible_h==h):
             outside_rows=(gy+2,gy+6) if lower else (gy-6,gy-2)
             rects.append((cols[0],outside_rows[0],cols[1],outside_rows[1]))
         values=[]
@@ -122,19 +130,20 @@ def edge_background(im: np.ndarray,x:int,y:int,w:int,h:int,visible_h:int,radius:
 
 def estimate_radius(im: np.ndarray, source: np.ndarray, box: dict) -> tuple[float, float]:
     x,y,w,h = (int(box[k]) for k in ('x','y','w','h'))
-    vh=min(h,int(box.get('clip_h') or h),im.shape[0]-y)
+    rows=visible_rows(box,im.shape[0]);vh=rows.stop-rows.start
     observed = im[y:y+vh,x:x+w].astype(np.float32)
-    old = cover(source,w,h)[:vh].astype(np.float32)
+    old = cover(source,w,h)[rows].astype(np.float32)
     bg, noise = background(im,x,y,w,vh)
     # Calibrate colors on the opaque core (JPEG/resampling changes color slightly).
     core = (slice(vh//4,3*vh//4), slice(w//4,3*w//4))
     offset = np.median(observed[core]-old[core],axis=(0,1))
     old = np.clip(old+offset,0,255)
     yy,xx = np.mgrid[:vh,:w]
-    corners = (np.minimum(xx,w-1-xx)<w*.24)&(np.minimum(yy,h-1-yy)<h*.24)
+    full_y=yy+rows.start
+    corners = (np.minimum(xx,w-1-xx)<w*.24)&(np.minimum(full_y,h-1-full_y)<h*.24)
     scores=[]
     for r in np.arange(0, min(w,h)*.3+.25, .5):
-        a=coverage(w,h,float(r),samples=4)[:vh]
+        a=coverage(w,h,float(r),samples=4)[rows]
         expected=old*a[...,None]+bg*(1-a[...,None])
         err=np.mean(np.minimum(np.abs(expected-observed)[corners],60))
         scores.append((float(err),float(r)))
@@ -150,12 +159,12 @@ def render(im: np.ndarray, source: np.ndarray, replacement: np.ndarray, boxes: l
             continue
         x,y,w,h = (int(b[k]) for k in ('x','y','w','h'))
         radius = float(b.get('radius', min(w,h)*.1))
-        vh=min(h,int(b.get('clip_h') or h),im.shape[0]-y)
-        a=coverage(w,h,radius)[:vh]
-        new=cover(replacement,w,h)[:vh].astype(np.float32)
+        rows=visible_rows(b,im.shape[0]);vh=rows.stop-rows.start
+        a=coverage(w,h,radius)[rows]
+        new=cover(replacement,w,h)[rows].astype(np.float32)
         # Never alpha-over the original avatar: even a small original-color
         # contribution becomes a visible fringe when magnified.
-        bg=edge_background(im,x,y,w,h,vh,radius)
+        bg=edge_background(im,x,y,w,h,vh,radius,rows.start)
         mixed=new*a[...,None]+bg*(1-a[...,None])
         patch=out[y:y+vh,x:x+w]
         changed=a>0

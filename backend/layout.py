@@ -6,7 +6,7 @@ not compare to a bundled source portrait or infer the identity of a face.
 import cv2
 import numpy as np
 
-from .imaging import background, coverage
+from .imaging import background, coverage, visible_rows
 
 
 def _runs(mask):
@@ -39,23 +39,26 @@ def _edge(im, axis, guess, lo, hi, limit=4):
 
 def geometric_radius(im,box):
     x,y,w,h=[box[k] for k in ('x','y','w','h')]
-    vh=min(box.get('clip_h') or h,im.shape[0]-y)
+    rows=visible_rows(box,im.shape[0]);vh=rows.stop-rows.start
     bg,noise=background(im,x,y,w,vh)
     observed=im[y:y+vh,x:x+w].astype(float)
     distance=np.linalg.norm(observed-bg,axis=2)
     yy,xx=np.mgrid[:vh,:w]
-    corners=(np.minimum(xx,w-1-xx)<w*.25)&(np.minimum(yy,h-1-yy)<h*.25)
+    full_y=yy+rows.start
+    corners=(np.minimum(xx,w-1-xx)<w*.25)&(np.minimum(full_y,h-1-full_y)<h*.25)
     opaque=distance>max(22.,noise*3)
     k=max(2,round(min(w,h)*.25))
-    for rows,cols in [(slice(0,k),slice(0,k)),(slice(0,k),slice(w-k,w)),
-                      (slice(max(0,h-k),vh),slice(0,k)),(slice(max(0,h-k),vh),slice(w-k,w))]:
-        local=distance[rows,cols]
+    top_rows=slice(0,max(0,k-rows.start))
+    bottom_rows=slice(max(0,h-k-rows.start),vh)
+    for corner_rows,cols in [(top_rows,slice(0,k)),(top_rows,slice(w-k,w)),
+                             (bottom_rows,slice(0,k)),(bottom_rows,slice(w-k,w))]:
+        local=distance[corner_rows,cols]
         if local.size:
             threshold=max(22.,noise*3,float(np.percentile(local,80))*.25)
-            opaque[rows,cols]=local>threshold
+            opaque[corner_rows,cols]=local>threshold
     choices=[]
     for r in np.arange(0,min(w,h)*.25+.25,.5):
-        predicted=coverage(w,h,float(r),samples=4)[:vh]>.5
+        predicted=coverage(w,h,float(r),samples=4)[rows]>.5
         error=float(np.mean(predicted[corners]!=opaque[corners]))
         choices.append((error,float(r)))
     err,r=min(choices)
@@ -68,6 +71,26 @@ def shared_radius(boxes):
     pool=complete or boxes
     r=float(np.median([b['radius'] for b in pool]))
     return min(round(r*2)/2,min(min(b['w'],b['h'])/2 for b in boxes))
+
+
+def _top_clipped(im,box,radius,first_complete):
+    """A header clips the first avatar; a composer clips the last one.
+
+    Check the exposed corner shape as well, so an upper square cut and lower
+    rounded corners are not mistaken for a bottom crop. Position resolves flat
+    corners where the two masks are indistinguishable.
+    """
+    x,y,w,h=(box[k] for k in ('x','y','w','h'));vh=box['clip_h']
+    if y==0:return True
+    if y+vh>=im.shape[0] or y>=first_complete:return False
+    bg,noise=background(im,x,y,w,vh)
+    opaque=np.linalg.norm(im[y:y+vh,x:x+w].astype(float)-bg,axis=2)>max(22.,noise*3)
+    yy,xx=np.mgrid[:vh,:w]
+    corners=(np.minimum(xx,w-1-xx)<w*.2)&(np.minimum(yy,vh-1-yy)<h*.2)
+    mask=coverage(w,h,radius)>.5
+    top_error=np.mean(mask[h-vh:][corners]!=opaque[corners])
+    bottom_error=np.mean(mask[:vh][corners]!=opaque[corners])
+    return top_error<=bottom_error
 
 
 def detect_right(im):
@@ -133,6 +156,12 @@ def detect_right(im):
         if vh<height:b['clip_h']=int(vh)
         b['radius'],b['edge_quality']=geometric_radius(im,b)
         candidates.append(b)
+    radius=shared_radius(candidates)
+    first_complete=min((b['y'] for b in candidates if not b.get('clip_h')),default=H)
+    for b in candidates:
+        if b.get('clip_h') and _top_clipped(im,b,radius,first_complete):
+            b['clip_top']=b['h']-b['clip_h']
+            b['radius'],b['edge_quality']=geometric_radius(im,b)
     radius=shared_radius(candidates)
     for b in candidates:b['radius']=radius
     return candidates

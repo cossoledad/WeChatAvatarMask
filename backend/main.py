@@ -36,7 +36,7 @@ sessions={}
 lock=RLock()
 processing=BoundedSemaphore(1)
 PRODUCTION=bool(integer('AVATAR_MASK_PRODUCTION',0,0,1))
-app=FastAPI(title='Avatar Mask',version='0.4.0',
+app=FastAPI(title='Avatar Mask',version='0.4.1',
             docs_url=None if PRODUCTION else '/docs',redoc_url=None if PRODUCTION else '/redoc',
             openapi_url=None if PRODUCTION else '/openapi.json')
 if PRODUCTION:app.add_middleware(LanOnlyMiddleware)
@@ -50,6 +50,7 @@ class Box(BaseModel):
     h:int=Field(ge=8,le=1024)
     radius:float=Field(default=8,ge=0,le=512)
     clip_h:int|None=Field(default=None,ge=1,le=1024)
+    clip_top:int=Field(default=0,ge=0,le=1023)
     enabled:bool=True
     score:float=Field(default=1,ge=-1,le=1)
     edge_quality:float=Field(default=0,ge=0,le=1)
@@ -148,8 +149,8 @@ def get_image(session,iid):
 def validated(boxes,im,radius=None):
     H,W=im.shape[:2]
     for b in boxes:
-        visible=b.clip_h or b.h
-        if b.x+b.w>W or visible>b.h or b.y+visible>H or b.radius>min(b.w,b.h)/2:
+        visible=b.clip_h if b.clip_h is not None else b.h-b.clip_top
+        if b.x+b.w>W or visible<1 or b.clip_top+visible>b.h or b.y+visible>H or b.radius>min(b.w,b.h)/2:
             raise HTTPException(422,'头像框超出图片，或圆角超过短边的一半')
     result=[b.model_dump() for b in boxes]
     if result:
@@ -195,7 +196,7 @@ def create(source,replacement,images,threshold,min_size,max_size,replacement_id=
 
 
 @app.get('/api/health')
-def health():return dict(status='ok',processing='local',engine='right-layout + multiscale NCC',version='0.4.0',limits=dict(max_upload_mb=MAX_UPLOAD//1024//1024,max_pixels=MAX_PIXELS))
+def health():return dict(status='ok',processing='local',engine='right-layout + multiscale NCC',version='0.4.1',limits=dict(max_upload_mb=MAX_UPLOAD//1024//1024,max_pixels=MAX_PIXELS))
 
 
 @app.get('/api/default-avatar')
